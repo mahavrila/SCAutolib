@@ -112,9 +112,12 @@ class IPAServerCA(CA):
         run(f'bash {ipa_client_script} /etc/ipa/ca.crt')
         logger.debug("Setup of IPA client for smart card is finished")
 
-        out = run("ipa pwpolicy-show global_policy")
-        if "Min lifetime (hours): 0" not in out.stdout:
-            run("ipa pwpolicy-mod global_policy --minlife 0 --maxlife 365")
+        result = self.meta_client.pwpolicy_show("global_policy")["result"]
+        if result["krbminpwdlife"] != ["0"] or \
+            result["krbmaxpwdlife"] != ["365"]:
+            self.meta_client.pwpolicy_mod(o_cn="global_policy",
+                                          o_krbmaxpwdlife=365,
+                                          o_krbminpwdlife=0)
             logger.debug("Password policy for IPA is changed.")
 
         # TODO: add to restore client host name
