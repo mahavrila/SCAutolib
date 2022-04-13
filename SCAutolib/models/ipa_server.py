@@ -70,8 +70,8 @@ class IPAServerCA(CA):
             removed
         :type force: bool
         """
-        out = run(["ipa", "-v"], print_=False)
-        if "IPA client is not configured on this system" not in out.stderr:
+
+        if IPAServerCA.is_configured():
             if not force:
                 logger.warning("IPA client is already configured on the system.")
                 logger.warning("Set force argument to True to _remove previous "
@@ -83,30 +83,8 @@ class IPAServerCA(CA):
         logger.info(f"Start setup of IPA client on the system for "
                     f"{self._ipa_server_hostname} IPA server.")
 
-        entry = f"{self._ipa_server_ip} {self._ipa_server_hostname}"
-        nameserver = f"nameserver {self._ipa_server_ip}"
-        ipa_client_script = Path(LIB_DIR, "ipa-client-sc.sh")
-
-        with open("/etc/hosts", "r+") as f:
-            cnt = f.read()
-            if entry not in cnt:
-                f.write(entry)
-                logger.warning(
-                    f"New entry {entry} for IPA server is added to /etc/hosts")
-            logger.info(
-                f"Entry for IPA server {entry} presents in the /etc/hosts")
-
-        with open("/etc/resolv.conf", "w+") as f:
-            cnt = f.read()
-            if nameserver not in cnt:
-                logger.warning(f"Nameserver {self._ipa_server_ip} is not "
-                               "present in /etc/resolve.conf. Adding...")
-                f.write(nameserver + "\n" + cnt)
-                logger.info(
-                    "IPA server is added to /etc/resolv.conf "
-                    "as first nameserver")
-                run("chattr -i /etc/resolv.conf")
-                logger.info("File /etc/resolv.conf is blocked for editing")
+        self._add_hosts_entry()
+        self._add_nameserver()
 
         run(f"hostnamectl set-hostname {self._ipa_client_hostname} --static")
         logger.debug(f"Hostname is set to {self._ipa_client_hostname}")
@@ -123,43 +101,15 @@ class IPAServerCA(CA):
 
         SSSDConf.set(key="certificate_verification", value="no_ocsp",
                      section="sssd")
+
         # FIXME: restart service with internal call
         run("systemctl restart sssd")
 
         run("kinit admin", input=self._ipa_server_admin_passwd)
         logger.debug("Kerberos ticket for admin user is obtained")
 
-        kinitpass = Responder(pattern="Password for admin@SC.TEST.COM: ",
-                              response="SECret.123\n")
-        with Connection(self._ipa_server_ip, user="root",
-                        connect_kwargs={"password":
-                                        self._ipa_server_root_passwd}) as c:
-            # Delete this block when PR in paramiko will be accepted
-            # https://github.com/paramiko/paramiko/issues/396
-            #### noqa:E266
-            paramiko.PKey.get_fingerprint = \
-                self.__PKeyChild.get_fingerprint_improved
-            c.client = paramiko.SSHClient()
-            c.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            #### noqa:E266
-            c.open()
-            # in_stream = False is required because while testing with pytest
-            # it collision appears with capturing of the output.
-            c.run("kinit admin", pty=True, watchers=[kinitpass], in_stream=False)
-            result = c.run("ipa-advise config-client-for-smart-card-auth",
-                           hide=True, in_stream=False)
-            with open(ipa_client_script, "w") as f:
-                f.write(result.stdout)
-        if os.stat(ipa_client_script).st_size == 0:
-            msg = "Script for IPA client smart card setup is not correctly " \
-                  "copied to the host"
-            logger.error(result.stdout)
-            logger.error(result.stderr)
-            raise SCAutolibException(msg)
-        logger.debug("File for setting up IPA client for smart cards is "
-                     f"copied to {ipa_client_script}")
+        ipa_client_script = self._get_ipa_sc_setup_script()
         run(f'bash {ipa_client_script} /etc/ipa/ca.crt')
-
         logger.debug("Setup of IPA client for smart card is finished")
 
         out = run("ipa pwpolicy-show global_policy")
@@ -214,7 +164,7 @@ class IPAServerCA(CA):
 
         :param user: User to be added to the IPA server.
         """
-        logger.info("Adding user to IPA server")
+        logger.debug("Adding user to IPA server")
         self.meta_client.user_add(user.username, user.username, user.username,
                                   user.username, o_userpassword=user.password)
         logger.info(f"User {user.username} is added to the IPA server")
@@ -246,6 +196,82 @@ class IPAServerCA(CA):
             check=True)
         run(["ipa-client-install", "--uninstall", "-U"], check=True)
         logger.info("IPA client is removed.")
+
+    def _get_ipa_sc_setup_script(self):
+        """
+        Obtain the script generated by IPA server for setting up client for
+        smart card usage
+
+        :return: Path to the script
+        """
+        ipa_client_script = Path(LIB_DIR, "ipa-client-sc.sh")
+        kinitpass = Responder(pattern="Password for admin@SC.TEST.COM: ",
+                              response="SECret.123\n")
+        with Connection(self._ipa_server_ip, user="root",
+                        connect_kwargs={"password":
+                                        self._ipa_server_root_passwd}) as c:
+            # Delete this block when PR in paramiko will be accepted
+            # https://github.com/paramiko/paramiko/issues/396
+            #### noqa:E266
+            paramiko.PKey.get_fingerprint = \
+                self.__PKeyChild.get_fingerprint_improved
+            c.client = paramiko.SSHClient()
+            c.client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+            #### noqa:E266
+            c.open()
+            # in_stream = False is required because while testing with pytest
+            # it collision appears with capturing of the output.
+            c.run("kinit admin", pty=True, watchers=[kinitpass], in_stream=False)
+            result = c.run("ipa-advise config-client-for-smart-card-auth",
+                           hide=True, in_stream=False)
+            with open(ipa_client_script, "w") as f:
+                f.write(result.stdout)
+
+        if os.stat(ipa_client_script).st_size == 0:
+            msg = "Script for IPA client smart card setup is not correctly " \
+                  "copied to the host"
+            logger.error(result.stdout)
+            logger.error(result.stderr)
+            raise SCAutolibException(msg)
+        logger.debug("File for setting up IPA client for smart cards is "
+                     f"copied to {ipa_client_script}")
+        return ipa_client_script
+
+    def _add_hosts_entry(self):
+        """
+        Adds new entry to /etc/hosts for DNS lookup
+        """
+        entry = f"{self._ipa_server_ip} {self._ipa_server_hostname}"
+        with open("/etc/hosts", "r+") as f:
+            cnt = f.read()
+            if entry not in cnt:
+                f.write(entry)
+                logger.warning(
+                    f"New entry {entry} for IPA server is added to /etc/hosts")
+            logger.info(
+                f"Entry for IPA server {entry} presents in the /etc/hosts")
+
+    def _add_nameserver(self):
+        """
+        Adds name server to system /erc/resolv.conf
+        """
+        nameserver = f"nameserver {self._ipa_server_ip}"
+        with open("/etc/resolv.conf", "w+") as f:
+            cnt = f.read()
+            if nameserver not in cnt:
+                logger.warning(f"Nameserver {self._ipa_server_ip} is not "
+                               "present in /etc/resolve.conf. Adding...")
+                f.write(nameserver + "\n" + cnt)
+                logger.info(
+                    "IPA server is added to /etc/resolv.conf "
+                    "as first nameserver")
+                run("chattr -i /etc/resolv.conf")
+                logger.info("File /etc/resolv.conf is blocked for editing")
+
+    @staticmethod
+    def is_configured():
+        out = run(["ipa", "-v"], print_=False)
+        return "IPA client is not configured on this system" not in out.stderr
 
     class __PKeyChild(paramiko.PKey):
         """This child class is need to fix SSH connection with MD5 algorith
