@@ -4,16 +4,16 @@ from pathlib import Path
 from socket import gethostname
 
 import paramiko
-from SCAutolib import logger
-from SCAutolib import run, LIB_DIR
-from SCAutolib.exceptions import SCAutolibException
-from SCAutolib.models.ca import CA
-from SCAutolib.models.sssd_conf import SSSDConf
-from SCAutolib.models.user import IPAUser
 from cryptography import x509
 from fabric.connection import Connection
 from invoke import Responder
 from python_freeipa.client_meta import ClientMeta
+
+from SCAutolib import logger, run, LIB_DIR
+from SCAutolib.exceptions import SCAutolibException
+from SCAutolib.models.ca import CA
+from SCAutolib.models.sssd_conf import SSSDConf
+from SCAutolib.models.user import IPAUser
 
 
 class IPAServerCA(CA):
@@ -63,7 +63,7 @@ class IPAServerCA(CA):
     def setup(self, force: bool = False):
         """
         Setup IPA client for IPA server. After IPA client is installed, system
-        would be configured for smart card login with IPA using script from
+        would be configured for smart card usage with IPA using script from
         IPA server obtained via SSH.
 
         :param force: if True, previous installation of the IPA client would be
@@ -135,9 +135,12 @@ class IPAServerCA(CA):
         name.
 
         :param csr: path to CSR
+        :type csr: pathlib.Path
         :param username: subject for the certificate
+        :type username: str
         :param cert_out: path where the certificate is stored. Can be a
                          directory or a file.
+        :type cert_out: pathlib.Path
 
         :return: Path to the PEM certificate.
         """
@@ -166,6 +169,7 @@ class IPAServerCA(CA):
         result, o_givenname == o_uid == o_sn == o_cn for simplicity.
 
         :param user: User to be added to the IPA server.
+        :type user: SCAutolib.models.user.IPAUser
         """
         logger.debug("Adding user to IPA server")
         self.meta_client.user_add(user.username, user.username, user.username,
@@ -179,7 +183,7 @@ class IPAServerCA(CA):
         serial number of the certificate from the file
 
         :param cert_path: Path to the certificate in PEM format
-
+        :type cert_path: patlib.Path
         """
         with cert_path.open("rb") as f:
             cert = x509.load_pem_x509_certificate(f.read())
