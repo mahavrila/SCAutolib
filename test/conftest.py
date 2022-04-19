@@ -1,3 +1,6 @@
+from fixtures import *
+
+
 def pytest_addoption(parser):
     parser.addoption(
         "--ipa-ip", action="store", help="IP address of IPA server")
