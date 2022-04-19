@@ -24,12 +24,12 @@ class LocalCA(CA):
         self._crl: Path = Path(root_dir, "crl", "root.crl")
         self._ca_pki_db: Path = Path("/etc/sssd/pki/sssd_auth_ca_db.pem")
 
-        self._ca_cnf = Path(self._conf_dir, "ca.cnf")
-        self._ca_cert = Path(root_dir, "rootCA.pem")
-        self._ca_key = Path(root_dir, "rootCA.key")
+        self._ca_cnf: Path = Path(self._conf_dir, "ca.cnf")
+        self._ca_cert: Path = Path(root_dir, "rootCA.pem")
+        self._ca_key: Path = Path(root_dir, "rootCA.key")
 
-        self._serial = Path(root_dir, "serial")
-        self._index = Path(root_dir, "index.txt")
+        self._serial: Path = Path(root_dir, "serial")
+        self._index: Path = Path(root_dir, "index.txt")
 
     def setup(self, force: bool = False):
         """
@@ -108,8 +108,10 @@ class LocalCA(CA):
         :param csr: path to CSR
         :param username: subject in the CSR
         :param cert_out: path where the certificate should be duplicated.
-                         Default None
-
+                         Can be a directory or a file. If a file, .pem extension
+                         would be set to the filename. If not specified,
+                         certificate would be created in default directory and
+                         filename  <root ca directory>/certs/<username>.pem
         :return: returns path to the signed certificate
         """
         if cert_out is not None:
@@ -118,7 +120,7 @@ class LocalCA(CA):
             elif cert_out.is_file():
                 cert_out.rename(cert_out.with_suffix(".pem"))
         else:
-            cert_out = Path(self._certs, f"{username}.pem")
+            cert_out = self._certs.joinpath(f"{username}.pem")
 
         run(["openssl", "ca", "-config", self._ca_cnf,
              "-batch", "-keyfile", self._ca_key, "-in", csr,
