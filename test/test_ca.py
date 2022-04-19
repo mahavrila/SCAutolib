@@ -1,13 +1,15 @@
-from SCAutolib.models import local_ca
-from pathlib import Path
 import pytest
-from subprocess import check_output
-from shutil import copyfile
-from SCAutolib import TEMPLATES_DIR
 import re
+from pathlib import Path
+from shutil import copyfile
+from subprocess import check_output
+
+from SCAutolib import TEMPLATES_DIR
+from SCAutolib.models import local_ca
 
 
-def test_local_ca_setup(tmpdir, caplog):
+def test_local_ca_setup(backup_sssd_ca_db, tmpdir, caplog):
+    sssd_auth_ca_db = Path("/etc/sssd/pki/sssd_auth_ca_db.pem")
     ca = local_ca.LocalCA(Path(tmpdir, "ca"))
     ca.setup()
 
@@ -18,14 +20,14 @@ def test_local_ca_setup(tmpdir, caplog):
 
     with ca._ca_cert.open("r") as f:
         # This directory has to be created by the LocalCA.setup()
-        with open("/etc/sssd/pki/sssd_auth_ca_db.pem", "r") as f_db:
+        with sssd_auth_ca_db.open()as f_db:
             assert f.read() in f_db.read()
 
     assert "Local CA is configured" in caplog.messages
 
 
 @pytest.mark.parametrize("force", (False, True))
-def test_local_ca_setup_force(tmpdir, caplog, force):
+def test_local_ca_setup_force(backup_sssd_ca_db, tmpdir, caplog, force):
     tmp_file = Path(tmpdir, "ca", "some-file")
     tmp_file.parent.mkdir()
     tmp_file.touch()

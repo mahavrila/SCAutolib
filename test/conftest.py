@@ -1,4 +1,4 @@
-from fixtures import *
+from fixtures import *  # noqa: F401
 
 
 def pytest_addoption(parser):
