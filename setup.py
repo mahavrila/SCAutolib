@@ -36,6 +36,7 @@ setup(
     packages=find_packages(),
     python_requires='>=3',
     install_requires=reqs,
+    include_package_data=True,
     tests_require=["pytest"],
     entry_points={
         "console_scripts": ["scauto=SCAutolib.cli_commands:cli"]}
