@@ -39,6 +39,18 @@ def ipa_meta_client(dummy_ipa_vals):
 
 
 @pytest.fixture()
+def installed_ipa(dummy_ipa_vals, clean_ipa):
+    check_output(["ipa-client-install", "-p", "admin",
+                  "--password", dummy_ipa_vals["server_admin_passwd"],
+                  "--server", dummy_ipa_vals["server_hostname"],
+                  "--domain", dummy_ipa_vals["server_domain"],
+                  "--realm", dummy_ipa_vals["server_realm"],
+                  "--hostname", dummy_ipa_vals["client_hostname"],
+                  "--all-ip-addresses", "--force", "--force-join", "--no-ntp", "-U"],
+                 input="yes", encoding="utf-8")
+
+
+@pytest.fixture()
 def clean_ipa():
     yield
     check_output(["ipa-client-install", "--uninstall", "--unattended"],
@@ -57,7 +69,7 @@ def test_local_ca_setup(backup_sssd_ca_db, tmpdir, caplog):
 
     with ca._ca_cert.open("r") as f:
         # This directory has to be created by the LocalCA.setup()
-        with sssd_auth_ca_db.open()as f_db:
+        with sssd_auth_ca_db.open() as f_db:
             assert f.read() in f_db.read()
 
     assert "Local CA is configured" in caplog.messages
@@ -124,6 +136,7 @@ def test_revoke_cert(local_ca_fixture, tmpdir):
         assert re.match(rex, f.read())
 
 
+@pytest.mark.ipa
 def test_ipa_server_simple_setup(ipa_meta_client, dummy_ipa_vals, clean_ipa,
                                  caplog):
     ipa_ca = ipa_server.IPAServerCA(ip_addr=dummy_ipa_vals["server_ip"],
@@ -143,3 +156,32 @@ def test_ipa_server_simple_setup(ipa_meta_client, dummy_ipa_vals, clean_ipa,
 
     # Cleanup after test
     ipa_meta_client.host_del(a_fqdn=dummy_ipa_vals["client_hostname"])
+
+
+@pytest.mark.ipa
+@pytest.mark.parametrize("force", (False, True))
+def test_ipa_server_setup_force(installed_ipa, force, dummy_ipa_vals,
+                                ipa_meta_client, caplog):
+    ipa_ca = ipa_server.IPAServerCA(ip_addr=dummy_ipa_vals["server_ip"],
+                                    client_hostname=dummy_ipa_vals[
+                                        "client_hostname"],
+                                    hostname=dummy_ipa_vals["server_hostname"],
+                                    root_passwd=dummy_ipa_vals[
+                                        "server_root_passwd"],
+                                    admin_passwd=dummy_ipa_vals[
+                                        "server_admin_passwd"],
+                                    domain=dummy_ipa_vals["server_domain"])
+    ipa_ca.setup(force)
+
+    # Test if meta client can get info about freshly configured host
+    ipa_meta_client.host_show(a_fqdn=dummy_ipa_vals["client_hostname"])
+
+    # Cleanup after test
+    ipa_meta_client.host_del(a_fqdn=dummy_ipa_vals["client_hostname"])
+
+    msg = "IPA client is already configured on this system."
+    assert msg in caplog.messages
+    if not force:
+        msg = "Set force argument to True if you want to remove " \
+              "previous installation."
+        assert msg in caplog.messages
