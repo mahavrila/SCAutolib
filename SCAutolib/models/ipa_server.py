@@ -39,17 +39,24 @@ class IPAServerCA(CA):
         server and ready-to-use.
 
         :param ip_addr: IP address of the IPA server
+        :type ip_addr: str
         :param hostname: Hostname of the IPA server
+        :type hostname: str
         :param domain: Domain name of the IPA server
+        :type domain: str
         :param admin_passwd: Password for admin user on the IPA server
+        :type admin_passwd: str
         :param root_passwd: Password for root user on the IPA server
                             (system user)
+        :type root_passwd: str
         :param client_hostname: Hostname for the client. This name would be set
                                 on the client host
+        :type client_hostname: str
         :param realm: Kerberos realm. If not set, domain in upper cases would
                       be used instead
+        :type realm: str
         """
-
+        self._add_to_hosts()  # So we can log in to the IPA before setup
         self._ipa_server_ip = ip_addr
         self._ipa_server_domain = domain
         self._ipa_server_hostname = hostname
@@ -73,9 +80,9 @@ class IPAServerCA(CA):
         """
 
         if self.is_installed:
-            logger.info("IPA client is already configured on the system.")
+            logger.warning("IPA client is already configured on this system.")
             if not force:
-                logger.info("Set force argument to True if you want to remove"
+                logger.info("Set force argument to True if you want to remove "
                             "previous installation.")
                 return
             self.restore()
@@ -83,7 +90,6 @@ class IPAServerCA(CA):
         logger.info(f"Start setup of IPA client on the system for "
                     f"{self._ipa_server_hostname} IPA server.")
 
-        self._add_to_hosts()
         self._add_to_resolv()
         self._set_hostname()
 
@@ -124,7 +130,7 @@ class IPAServerCA(CA):
             returns zero return code), otherwise False
         :rtype: bool
         """
-        out = run(["ipa"], print_=False)
+        out = run(["ipa", "help"], print_=False)
         return out.returncode == 0
 
     def _set_hostname(self):
